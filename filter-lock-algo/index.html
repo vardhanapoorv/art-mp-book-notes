@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Filter Lock Algorithm Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family: "Inter", sans-serif;
+      }
+      .thread-state-color {
+        transition: background-color 0.3s ease;
+      }
+      .log-entry {
+        border-left: 3px solid;
+        transition:
+          background-color 0.3s ease,
+          border-color 0.3s ease;
+      }
+      .log-entry:hover {
+        background-color: #f0f4f8;
+      }
+      /* Spinner for Gemini button */
+      .loader {
+        width: 18px;
+        height: 18px;
+        border: 2px solid #fff;
+        border-bottom-color: transparent;
+        border-radius: 50%;
+        display: inline-block;
+        box-sizing: border-box;
+        animation: rotation 1s linear infinite;
+      }
+      @keyframes rotation {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body class="bg-gray-100 text-gray-800">
+    <div id="app" class="container mx-auto p-4 md:p-6 lg:p-8">
+      <header class="text-center mb-6">
+        <h1 class="text-3xl md:text-4xl font-bold text-gray-900">
+          Filter Lock Algorithm Simulator
+        </h1>
+        <p class="mt-2 text-md md:text-lg text-gray-600">
+          An interactive tool to visualize N-process mutual exclusion.
+        </p>
+      </header>
+
+      <!-- Controls -->
+      <div
+        class="bg-white rounded-xl shadow-md p-4 mb-6 flex flex-col sm:flex-row items-center justify-center gap-4"
+      >
+        <div class="flex items-center gap-3">
+          <label for="numThreads" class="font-medium">Threads:</label>
+          <input
+            type="number"
+            id="numThreads"
+            value="3"
+            min="2"
+            max="5"
+            class="w-20 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          />
+        </div>
+        <button
+          id="resetBtn"
+          class="w-full sm:w-auto bg-indigo-600 text-white font-semibold py-2 px-6 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out"
+        >
+          Initialize / Reset
+        </button>
+        <button
+          id="geminiBtn"
+          class="w-full sm:w-auto bg-purple-600 text-white font-semibold py-2 px-6 rounded-lg hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition duration-150 ease-in-out flex items-center justify-center gap-2"
+        >
+          <span id="gemini-btn-text">✨ Explain Current State</span>
+          <div id="gemini-spinner" class="loader hidden"></div>
+        </button>
+      </div>
+
+      <!-- Shared State -->
+      <div class="bg-white rounded-xl shadow-md p-4 mb-6">
+        <h2 class="text-xl font-semibold mb-4 text-center">
+          Shared Memory State
+        </h2>
+        <div
+          class="flex flex-col md:flex-row justify-around items-center gap-6"
+        >
+          <div id="level-array-container" class="text-center">
+            <h3 class="font-medium text-gray-700 mb-2">`level` array</h3>
+            <div
+              id="level-array"
+              class="flex gap-2 p-2 bg-gray-100 rounded-lg"
+            ></div>
+          </div>
+          <div id="victim-array-container" class="text-center">
+            <h3 class="font-medium text-gray-700 mb-2">`victim` array</h3>
+            <div
+              id="victim-array"
+              class="flex gap-2 p-2 bg-gray-100 rounded-lg"
+            ></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Threads Section -->
+      <div
+        id="threads-container"
+        class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6"
+      >
+        <!-- Thread cards will be injected here -->
+      </div>
+
+      <!-- Log Section -->
+      <div class="bg-white rounded-xl shadow-md p-4">
+        <h2
+          class="text-xl font-semibold mb-3 text-gray-800 flex items-center gap-2"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-6 w-6"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M4 6h16M4 12h16M4 18h7"
+            />
+          </svg>
+          Execution Log
+        </h2>
+        <div
+          id="log-container"
+          class="h-64 overflow-y-auto bg-gray-50 rounded-lg p-3 space-y-2"
+        >
+          <!-- Log entries will be added here -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Gemini Explanation Modal -->
+    <div
+      id="explanation-modal"
+      class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center p-4 hidden z-50"
+    >
+      <div
+        class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col"
+      >
+        <div class="p-4 border-b flex justify-between items-center">
+          <h2 class="text-xl font-bold text-gray-800">✨ AI Explanation</h2>
+          <button
+            id="close-modal-btn"
+            class="text-gray-500 hover:text-gray-800"
+          >
+            &times;
+          </button>
+        </div>
+        <div
+          id="explanation-content"
+          class="p-6 overflow-y-auto prose lg:prose-lg max-w-none"
+        >
+          <!-- Content will be injected here -->
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // State variables
+      let numThreads = 3;
+      let levels = [];
+      let victims = [];
+      let threads = [];
+      const threadColors = [
+        "#3B82F6",
+        "#10B981",
+        "#F59E0B",
+        "#EF4444",
+        "#8B5CF6",
+      ];
+
+      // DOM Elements
+      const numThreadsInput = document.getElementById("numThreads");
+      const resetBtn = document.getElementById("resetBtn");
+      const threadsContainer = document.getElementById("threads-container");
+      const levelArrayDiv = document.getElementById("level-array");
+      const victimArrayDiv = document.getElementById("victim-array");
+      const logContainer = document.getElementById("log-container");
+      const geminiBtn = document.getElementById("geminiBtn");
+      const geminiBtnText = document.getElementById("gemini-btn-text");
+      const geminiSpinner = document.getElementById("gemini-spinner");
+      const explanationModal = document.getElementById("explanation-modal");
+      const explanationContent = document.getElementById("explanation-content");
+      const closeModalBtn = document.getElementById("close-modal-btn");
+
+      // --- Core Algorithm Logic ---
+      function step(threadId) {
+        const thread = threads[threadId];
+        switch (thread.status) {
+          case "IDLE":
+            thread.status = "TRYING";
+            thread.pc = 0; // Start of lock()
+            thread.currentLevel = 0;
+            log(`Thread ${threadId} starts trying to acquire lock.`);
+            break;
+          case "TRYING":
+            executeLockStep(thread);
+            break;
+          case "IN_CS":
+            thread.pc = 100; // Start of unlock()
+            executeUnlockStep(thread);
+            break;
+          case "WAITING":
+            executeLockStep(thread);
+            break;
+        }
+        render();
+      }
+
+      function executeLockStep(thread) {
+        const i = thread.id;
+        const l = thread.currentLevel;
+
+        switch (thread.pc) {
+          case 0:
+            log(`Thread ${i} begins attempt for level ${l}.`);
+            thread.pc = 1;
+            step(i);
+            break;
+          case 1:
+            levels[i] = l;
+            log(`Thread ${i} sets level[${i}] = ${l}.`);
+            thread.pc = 2;
+            break;
+          case 2:
+            victims[l] = i;
+            log(`Thread ${i} sets victim[${l}] = ${i}.`);
+            thread.pc = 3;
+            break;
+          case 3:
+            let existsOtherAtOrAbove = false;
+            for (let k = 0; k < numThreads; k++) {
+              if (k !== i && levels[k] >= l) {
+                existsOtherAtOrAbove = true;
+                break;
+              }
+            }
+            const isVictim = victims[l] === i;
+            log(
+              `Thread ${i} checks wait condition at level ${l}: (exists other >= l? ${existsOtherAtOrAbove}) AND (is victim? ${isVictim})`,
+            );
+            if (existsOtherAtOrAbove && isVictim) {
+              thread.status = "WAITING";
+              log(`Thread ${i} is WAITING at level ${l}. Condition is true.`);
+            } else {
+              log(`Thread ${i} PASSED level ${l}. Condition is false.`);
+              thread.status = "TRYING";
+              thread.currentLevel++;
+              if (thread.currentLevel >= numThreads - 1) {
+                thread.pc = 4;
+              } else {
+                thread.pc = 1;
+              }
+              step(i);
+            }
+            break;
+          case 4:
+            thread.status = "IN_CS";
+            log(`Thread ${i} has entered the Critical Section!`, "success");
+            break;
+        }
+      }
+
+      function executeUnlockStep(thread) {
+        const i = thread.id;
+        if (thread.pc === 100) {
+          levels[i] = -1;
+          log(`Thread ${i} unlocks, setting level[${i}] = -1.`);
+          thread.status = "IDLE";
+          thread.pc = 0;
+          thread.currentLevel = 0;
+          log(`Thread ${i} is now IDLE.`, "info");
+        }
+      }
+
+      // --- Gemini API Integration ---
+      async function getExplanationFromGemini() {
+        geminiBtn.disabled = true;
+        geminiBtnText.classList.add("hidden");
+        geminiSpinner.classList.remove("hidden");
+        explanationModal.classList.remove("hidden");
+        explanationContent.innerHTML = `<div class="flex items-center justify-center p-8"><div class="loader" style="width: 40px; height: 40px; border-color: #4f46e5; border-bottom-color: transparent;"></div></div>`;
+
+        const systemPrompt =
+          "You are an expert computer science professor specializing in concurrency and parallel algorithms. Your task is to explain the current state of a Filter Lock algorithm simulation. Be clear, concise, and explain the 'why' behind the state, not just the 'what'. Use simple markdown for formatting (bolding with **, lists with -).";
+
+        // Sanitize thread state for the prompt
+        const threadsForPrompt = threads.map((t) => ({
+          id: t.id,
+          status: t.status,
+          trying_level: t.currentLevel,
+        }));
+
+        const userQuery = `
+Here is the current state of a Filter Lock simulation with N threads.
+
+### Algorithm Recap:
+- \`level[i]\`: The current level thread \`i\` is trying to pass. -1 means it's idle.
+- \`victim[l]\`: The last thread to arrive at level \`l\`, becoming the 'victim' who must wait if there's contention.
+- A thread \`i\` at level \`l\` must wait if: \`(another thread k exists where level[k] >= l) AND (victim[l] == i)\`.
+
+### Current Simulation State:
+- Number of Threads: ${numThreads}
+- \`level\` array: ${JSON.stringify(levels)}
+- \`victim\` array: ${JSON.stringify(victims)}
+- Threads Status:
+\`\`\`json
+${JSON.stringify(threadsForPrompt, null, 2)}
+\`\`\`
+
+### Your Task:
+1.  Analyze the state above.
+2.  Provide a clear, step-by-step explanation of the current situation.
+3.  State which thread (if any) is in the critical section.
+4.  Explain which threads (if any) are currently waiting and *specifically why* they are waiting by referencing the \`level\` and \`victim\` values and the wait condition.
+5.  Predict what will likely happen next for any waiting threads.
+`;
+
+        const apiKey = "";
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+        const payload = {
+          contents: [{ parts: [{ text: userQuery }] }],
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+        };
+
+        try {
+          const response = await fetch(apiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          if (!response.ok) {
+            throw new Error(
+              `API Error: ${response.status} ${response.statusText}`,
+            );
+          }
+
+          const result = await response.json();
+          const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+          if (text) {
+            // Simple markdown to HTML
+            let html = text
+              .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>") // Bold
+              .replace(
+                /`([^`]+)`/g,
+                '<code class="bg-gray-200 p-1 rounded text-sm">$1</code>',
+              ) // Inline code
+              .replace(/\n/g, "<br>");
+            explanationContent.innerHTML = html;
+          } else {
+            explanationContent.textContent =
+              "Sorry, I couldn't generate an explanation. The response from the AI was empty.";
+          }
+        } catch (error) {
+          console.error("Gemini API call failed:", error);
+          explanationContent.textContent = `An error occurred while fetching the explanation: ${error.message}. Please check the console for details.`;
+        } finally {
+          geminiBtn.disabled = false;
+          geminiBtnText.classList.remove("hidden");
+          geminiSpinner.classList.add("hidden");
+        }
+      }
+
+      // --- UI Rendering ---
+      function render() {
+        renderSharedState();
+        renderThreads();
+      }
+
+      function renderSharedState() {
+        levelArrayDiv.innerHTML = levels
+          .map(
+            (val, i) =>
+              `<div class="w-12 h-12 flex items-center justify-center bg-white border-2 rounded-lg font-mono text-lg" style="border-color: ${threadColors[i] || "#6B7280"};">${val === -1 ? "–" : val}</div>`,
+          )
+          .join("");
+
+        victimArrayDiv.innerHTML = victims
+          .map(
+            (val, i) =>
+              `<div class="w-12 h-12 flex items-center justify-center bg-white border-2 rounded-lg font-mono text-lg font-semibold" style="border-color: #A5B4FC; color: ${val === -1 ? "inherit" : threadColors[val]}">${val === -1 ? "–" : val}</div>`,
+          )
+          .join("");
+      }
+
+      function renderThreads() {
+        threadsContainer.innerHTML = threads
+          .map((thread) => {
+            let statusText = "",
+              statusColor = "",
+              buttonText = "";
+            switch (thread.status) {
+              case "IDLE":
+                statusText = "Idle";
+                statusColor = "bg-gray-200";
+                buttonText = "Acquire Lock";
+                break;
+              case "TRYING":
+                statusText = `Trying Level ${thread.currentLevel}`;
+                statusColor = "bg-yellow-300";
+                buttonText = "Execute Next Step";
+                break;
+              case "WAITING":
+                statusText = `Waiting at Level ${thread.currentLevel}`;
+                statusColor = "bg-red-400 text-white";
+                buttonText = "Check Wait Condition";
+                break;
+              case "IN_CS":
+                statusText = "In Critical Section";
+                statusColor = "bg-green-400";
+                buttonText = "Release Lock";
+                break;
+            }
+            return `
+                    <div class="bg-white rounded-xl shadow-md p-4 flex flex-col justify-between" style="border-top: 5px solid ${threadColors[thread.id]};">
+                        <div>
+                            <h3 class="text-lg font-bold">Thread ${thread.id}</h3>
+                            <div class="mt-2 mb-4 p-2 rounded-lg text-center font-medium thread-state-color ${statusColor}">${statusText}</div>
+                            <div class="text-sm text-gray-600 space-y-1 font-mono">
+                                <div>pc: ${thread.pc}</div>
+                                <div>level: ${thread.currentLevel}</div>
+                            </div>
+                        </div>
+                        <button class="w-full mt-4 bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700 transition duration-150" onclick="step(${thread.id})">
+                            ${buttonText}
+                        </button>
+                    </div>
+                `;
+          })
+          .join("");
+
+        threadsContainer.className = `grid grid-cols-1 ${numThreads <= 3 ? `md:grid-cols-${numThreads}` : `sm:grid-cols-2 lg:grid-cols-${numThreads}`} gap-6 mb-6`;
+      }
+
+      function log(message, type = "default") {
+        const entry = document.createElement("div");
+        entry.className = "p-2 rounded-md text-sm log-entry";
+        let color = "#4B5563";
+        switch (type) {
+          case "success":
+            color = "#10B981";
+            break;
+          case "info":
+            color = "#3B82F6";
+            break;
+        }
+        entry.style.borderColor = color;
+        entry.textContent = message;
+        logContainer.appendChild(entry);
+        logContainer.scrollTop = logContainer.scrollHeight;
+      }
+
+      // --- Initialization & Event Listeners ---
+      function initialize() {
+        numThreads = parseInt(numThreadsInput.value);
+        if (isNaN(numThreads) || numThreads < 2 || numThreads > 5) {
+          alert("Please enter a number of threads between 2 and 5.");
+          numThreadsInput.value = numThreads = 3;
+        }
+        levels = Array(numThreads).fill(-1);
+        victims = Array(numThreads - 1).fill(-1);
+        threads = [];
+        for (let i = 0; i < numThreads; i++) {
+          threads.push({ id: i, status: "IDLE", pc: 0, currentLevel: 0 });
+        }
+        logContainer.innerHTML = "";
+        log(`Simulator initialized with ${numThreads} threads.`);
+        render();
+      }
+
+      resetBtn.addEventListener("click", initialize);
+      numThreadsInput.addEventListener("change", initialize);
+      geminiBtn.addEventListener("click", getExplanationFromGemini);
+      closeModalBtn.addEventListener("click", () =>
+        explanationModal.classList.add("hidden"),
+      );
+
+      window.onload = initialize;
+    </script>
+  </body>
+</html>
